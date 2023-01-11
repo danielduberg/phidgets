@@ -1,8 +1,8 @@
 <launch>
 	<arg name="manager" default="motor_manager" doc="Nodelet manager for this nodelet" />
 
-	<arg name="motor_left_port" default="2"/>
-	<arg name="motor_right_port" default="4"/>
+	<arg name="motor_left_port" default="4"/>
+	<arg name="motor_right_port" default="2"/>
 
 	<group if="$(eval 'motor_manager' == manager)">
 		<node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen"/>

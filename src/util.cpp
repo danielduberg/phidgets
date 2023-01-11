@@ -75,6 +75,6 @@ void errorCallback(PhidgetHandle ch, void* ctx, Phidget_ErrorEventCode code,
                    char const* description)
 {
 	PhidgetLog_loge(NULL, 0, NULL, reinterpret_cast<std::string*>(ctx)->c_str(),
-	                PHIDGET_LOG_INFO, "Error");
+	                PHIDGET_LOG_ERROR, "Error");
 }
 }  // namespace phidgets

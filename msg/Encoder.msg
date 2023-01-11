@@ -4,4 +4,3 @@ int32 encoder_left
 int32 encoder_right
 int32 delta_encoder_left
 int32 delta_encoder_right
-int32 timestamp

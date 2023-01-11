@@ -8,7 +8,8 @@
 
 namespace phidgets
 {
-Motor::Motor(ros::NodeHandle& nh, ros::NodeHandle& nh_priv) : server_(nh_priv)
+Motor::Motor(ros::NodeHandle& nh, ros::NodeHandle& nh_priv)
+    : server_(nh_priv), encoder_worker_(&Motor::encoderPublisher, this)
 {
 	encoder_pub_ = nh.advertise<Encoder>("encoder", 1);
 
@@ -128,16 +129,60 @@ void Motor::attach(uint32_t timeout_ms)
 void Motor::encoderLeftCallback(PhidgetEncoderHandle ch, void* ctx, int position_change,
                                 double time_change, int index_triggered)
 {
-	static_cast<Motor*>(ctx)->last_encoder_left_ = position_change;
-	static_cast<Motor*>(ctx)->acc_encoder_left_ += position_change;
-	std::cerr << "Hej\n";
+	std::unique_lock<std::mutex> lk(static_cast<Motor*>(ctx)->encoder_m_);
+	static_cast<Motor*>(ctx)->encoder_left_queue_.push(position_change);
+	lk.unlock();
+	static_cast<Motor*>(ctx)->encoder_cv_.notify_one();
 }
 
 void Motor::encoderRightCallback(PhidgetEncoderHandle ch, void* ctx, int position_change,
                                  double time_change, int index_triggered)
 {
-	static_cast<Motor*>(ctx)->last_encoder_right_ = position_change;
-	static_cast<Motor*>(ctx)->acc_encoder_right_ += position_change;
+	std::unique_lock<std::mutex> lk(static_cast<Motor*>(ctx)->encoder_m_);
+	static_cast<Motor*>(ctx)->encoder_right_queue_.push(position_change);
+	lk.unlock();
+	static_cast<Motor*>(ctx)->encoder_cv_.notify_one();
+}
+
+void Motor::encoderPublisher()
+{
+	std::queue<int> left, right;
+	std::unique_lock<std::mutex> lk(encoder_m_);
+
+	Encoder msg;
+
+	for (;;) {
+		encoder_cv_.wait(lk, [this] {
+			return !encoder_left_queue_.empty() && !encoder_right_queue_.empty();
+		});
+
+		std::swap(left, encoder_left_queue_);
+		std::swap(right, encoder_right_queue_);
+		lk.unlock();
+		encoder_cv_.notify_one();
+
+		while (left.size() > right.size()) {
+			left.pop();
+		}
+		while (right.size() > left.size()) {
+			right.pop();
+		}
+
+		while (!left.empty() && !right.empty()) {
+			msg.header.frame_id = "";
+			msg.header.stamp = ros::Time::now();
+
+			msg.delta_encoder_left = left.front();
+			msg.delta_encoder_right = right.front();
+			msg.encoder_left += msg.delta_encoder_left;
+			msg.encoder_right += msg.delta_encoder_right;
+
+			encoder_pub_.publish(msg);
+
+			left.pop();
+			right.pop();
+		}
+	}
 }
 
 void Motor::pwmCallback(PWM::ConstPtr const& msg)
