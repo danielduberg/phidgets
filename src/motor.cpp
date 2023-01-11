@@ -37,6 +37,9 @@ Motor::Motor(ros::NodeHandle& nh, ros::NodeHandle& nh_priv)
 
 Motor::~Motor()
 {
+	done_.store(true);
+	encoder_worker_.join();
+
 	if (EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(motor_left_)) ||
 	    EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(motor_right_)) ||
 	    EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_left_)) ||
@@ -147,19 +150,15 @@ void Motor::encoderRightCallback(PhidgetEncoderHandle ch, void* ctx, int positio
 void Motor::encoderPublisher()
 {
 	std::queue<int> left, right;
-	std::unique_lock<std::mutex> lk(encoder_m_);
-
 	Encoder msg;
-
-	for (;;) {
-		encoder_cv_.wait(lk, [this] {
+	while (!done_.load()) {
+		std::unique_lock<std::mutex> lk(encoder_m_);
+		encoder_cv_.wait(lk, [&] {
 			return !encoder_left_queue_.empty() && !encoder_right_queue_.empty();
 		});
-
 		std::swap(left, encoder_left_queue_);
 		std::swap(right, encoder_right_queue_);
 		lk.unlock();
-		encoder_cv_.notify_one();
 
 		while (left.size() > right.size()) {
 			left.pop();

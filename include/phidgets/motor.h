@@ -19,6 +19,7 @@ extern "C" {
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <atomic>
 
 namespace phidgets
 {
@@ -63,7 +64,8 @@ class Motor
 	std::thread encoder_worker_;
 	std::mutex encoder_m_;
 	std::condition_variable encoder_cv_;
-
+	std::atomic_bool done_{false};
+	
 	PhidgetDCMotorHandle motor_left_;
 	PhidgetDCMotorHandle motor_right_;
 	PhidgetEncoderHandle encoder_left_;
@@ -71,8 +73,6 @@ class Motor
 
 	std::queue<int> encoder_left_queue_;
 	std::queue<int> encoder_right_queue_;
-	int encoder_left_acc_{};
-	int encoder_right_acc_{};
 };
 }  // namespace phidgets
 
