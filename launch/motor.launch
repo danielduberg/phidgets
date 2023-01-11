@@ -1,0 +1,15 @@
+<launch>
+	<arg name="manager" default="motor_manager" doc="Nodelet manager for this nodelet" />
+
+	<arg name="motor_left_port" default="2"/>
+	<arg name="motor_right_port" default="4"/>
+
+	<group if="$(eval 'motor_manager' == manager)">
+		<node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen"/>
+	</group>
+
+	<node pkg="nodelet" type="nodelet" name="MotorNodelet" args="load phidgets/MotorNodelet $(arg manager)" output="screen">
+		<param name="motor_left_port" value="$(arg motor_left_port)"/>
+		<param name="motor_right_port" value="$(arg motor_right_port)"/>
+	</node>
+</launch>

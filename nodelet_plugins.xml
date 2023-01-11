@@ -1,0 +1,23 @@
+<library path="lib/libphidgets_logging_nodelet">
+	<class name="phidgets/LoggingNodelet" type="phidgets::LoggingNodelet" base_class_type="nodelet::Nodelet">
+		<description>
+  		Phidgets logging nodelet.
+		</description>
+	</class>
+</library>
+
+<library path="lib/libphidgets_spatial_nodelet">
+	<class name="phidgets/SpatialNodelet" type="phidgets::SpatialNodelet" base_class_type="nodelet::Nodelet">
+		<description>
+  		Phidgets spatial nodelet.
+		</description>
+	</class>
+</library>
+
+<library path="lib/libphidgets_motor_nodelet">
+	<class name="phidgets/MotorNodelet" type="phidgets::MotorNodelet" base_class_type="nodelet::Nodelet">
+		<description>
+  		Phidgets motor nodelet.
+		</description>
+	</class>
+</library>

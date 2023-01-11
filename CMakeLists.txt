@@ -21,6 +21,8 @@ endif()
 find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   imu_filter_madgwick
+  message_generation
+  nodelet
   roscpp
   roslaunch
   roslib
@@ -30,17 +32,27 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs
 )
 
+add_message_files(
+  FILES
+  Encoder.msg
+  PWM.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
 generate_dynamic_reconfigure_options(
-  cfg/Phidgets.cfg
+  cfg/Logging.cfg
   cfg/Spatial.cfg
   cfg/Motor.cfg
 )
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS dynamic_reconfigure roscpp roslib
-
-  # DEPENDS system_lib
+  LIBRARIES phidgets_spatial phidgets_motor
+  CATKIN_DEPENDS message_runtime nodelet dynamic_reconfigure roscpp roslib sensor_msgs std_msgs std_srvs
 )
 
 include_directories(
@@ -48,35 +60,41 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(${PROJECT_NAME}_node
-  src/phidgets_node.cpp
-  src/spatial.cpp
-  src/motor.cpp
-)
+add_library(phidgets_logging_nodelet src/logging_nodelet.cpp)
+add_library(phidgets_spatial src/spatial.cpp src/util.cpp)
+add_library(phidgets_spatial_nodelet src/spatial_nodelet.cpp)
+add_library(phidgets_motor src/motor.cpp src/util.cpp)
+add_library(phidgets_motor_nodelet src/motor_nodelet.cpp)
 
-set_target_properties(${PROJECT_NAME}_node
-  PROPERTIES
-  VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED YES
-  CXX_EXTENSIONS NO
-)
+add_dependencies(phidgets_logging_nodelet ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(phidgets_spatial ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(phidgets_spatial_nodelet ${catkin_EXPORTED_TARGETS})
+add_dependencies(phidgets_motor ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(phidgets_motor_nodelet ${catkin_EXPORTED_TARGETS})
 
-add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+target_link_libraries(phidgets_logging_nodelet ${catkin_LIBRARIES} phidget22)
+target_link_libraries(phidgets_spatial ${catkin_LIBRARIES} phidget22)
+target_link_libraries(phidgets_spatial_nodelet ${catkin_LIBRARIES} phidgets_spatial)
+target_link_libraries(phidgets_motor ${catkin_LIBRARIES} phidget22)
+target_link_libraries(phidgets_motor_nodelet ${catkin_LIBRARIES} phidgets_motor)
 
-target_link_libraries(${PROJECT_NAME}_node
-  ${catkin_LIBRARIES}
-  phidget22
-)
-
-install(TARGETS ${PROJECT_NAME}_node
+install(TARGETS phidgets_logging_nodelet phidgets_spatial phidgets_spatial_nodelet phidgets_motor phidgets_motor_nodelet
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-# # Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-# # myfile1
-# # myfile2
-# DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h"
+)
+
+install(DIRECTORY launch
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(FILES nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+roslaunch_add_file_check(launch)
