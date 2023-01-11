@@ -15,6 +15,9 @@ namespace phidgets
 class SpatialNodelet : public nodelet::Nodelet
 {
  public:
+	~SpatialNodelet() override = default;
+
+ private:
 	void onInit() override;
 
  private:

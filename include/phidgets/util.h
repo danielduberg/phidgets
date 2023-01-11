@@ -8,7 +8,7 @@ extern "C" {
 
 namespace phidgets
 {
-bool handleError();
+void handleError(PhidgetReturnCode ret_code, int exit_status, char const *name = "");
 
 void CCONV attachCallback(PhidgetHandle ch, void *ctx);
 

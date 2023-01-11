@@ -16,9 +16,11 @@ namespace phidgets
 class LoggingNodelet : public nodelet::Nodelet
 {
  public:
-	void onInit() override;
+	~LoggingNodelet() override = default;
 
  private:
+	void onInit() override;
+
 	void callback(LoggingConfig& config, uint32_t level);
 
  private:

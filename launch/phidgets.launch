@@ -7,9 +7,9 @@
     <arg name="manager" value="$(arg manager)"/>
   </include>
   
-  <!-- <include file="$(find phidgets)/launch/spatial.launch">
+  <include file="$(find phidgets)/launch/spatial.launch">
     <arg name="manager" value="$(arg manager)"/>
-  </include> -->
+  </include>
 
   <include file="$(find phidgets)/launch/motor.launch">
     <arg name="manager" value="$(arg manager)"/>

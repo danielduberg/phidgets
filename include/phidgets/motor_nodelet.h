@@ -15,6 +15,9 @@ namespace phidgets
 class MotorNodelet : public nodelet::Nodelet
 {
  public:
+	~MotorNodelet() override = default;
+
+ private:
 	void onInit() override;
 
  private:

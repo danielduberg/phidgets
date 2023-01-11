@@ -38,12 +38,9 @@ Spatial::Spatial(ros::NodeHandle& nh, ros::NodeHandle& nh_priv) : server_(nh_pri
 
 Spatial::~Spatial()
 {
-	if (EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(spatial_)) ||
-	    EPHIDGET_OK !=
-	        Phidget_close(reinterpret_cast<PhidgetHandle>(temperature_sensor_))) {
-		handleError();
-		exit(2);
-	}
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(spatial_)), 2, "Spatial");
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(temperature_sensor_)), 2,
+	            "Spatial");
 
 	PhidgetSpatial_delete(&spatial_);
 	PhidgetTemperatureSensor_delete(&temperature_sensor_);
@@ -52,20 +49,15 @@ Spatial::~Spatial()
 double Spatial::spatialDataRate() const
 {
 	double r;
-	if (EPHIDGET_OK != PhidgetSpatial_getDataRate(spatial_, &r)) {
-		handleError();
-		exit(3);
-	}
+	handleError(PhidgetSpatial_getDataRate(spatial_, &r), 3, "Spatial");
 	return r;
 }
 
 double Spatial::temperatureSensorDataRate() const
 {
 	double r;
-	if (EPHIDGET_OK != PhidgetTemperatureSensor_getDataRate(temperature_sensor_, &r)) {
-		handleError();
-		exit(3);
-	}
+	handleError(PhidgetTemperatureSensor_getDataRate(temperature_sensor_, &r), 4,
+	            "Spatial");
 	return r;
 }
 
@@ -77,13 +69,11 @@ void Spatial::create()
 
 void Spatial::setHubPort(int port)
 {
-	if (EPHIDGET_OK !=
-	        Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(spatial_), port) ||
-	    EPHIDGET_OK != Phidget_setHubPort(
-	                       reinterpret_cast<PhidgetHandle>(temperature_sensor_), port)) {
-		handleError();
-		exit(3);
-	}
+	handleError(Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(spatial_), port), 5,
+	            "Spatial");
+	handleError(
+	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(temperature_sensor_), port), 5,
+	    "Spatial");
 }
 
 void Spatial::assignEventHandlers()
@@ -111,38 +101,28 @@ void Spatial::assignEventHandlers()
 
 void Spatial::attach(uint32_t timeout_ms)
 {
-	if (EPHIDGET_OK != Phidget_openWaitForAttachment(
-	                       reinterpret_cast<PhidgetHandle>(spatial_), timeout_ms) ||
-	    EPHIDGET_OK !=
-	        Phidget_openWaitForAttachment(
-	            reinterpret_cast<PhidgetHandle>(temperature_sensor_), timeout_ms)) {
-		handleError();
-		exit(4);
-	}
+	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(spatial_),
+	                                          timeout_ms),
+	            6, "Spatial");
+	handleError(Phidget_openWaitForAttachment(
+	                reinterpret_cast<PhidgetHandle>(temperature_sensor_), timeout_ms),
+	            6, "Spatial");
 }
 
 void Spatial::setHeating(bool enable)
 {
-	if (EPHIDGET_OK != PhidgetSpatial_setHeatingEnabled(spatial_, enable)) {
-		handleError();
-		exit(4);
-	}
+	handleError(PhidgetSpatial_setHeatingEnabled(spatial_, enable), 7, "Spatial");
 }
 
 void Spatial::setSpatialDataRate(double rate)
 {
-	if (EPHIDGET_OK != PhidgetSpatial_setDataRate(spatial_, rate)) {
-		handleError();
-		exit(4);
-	}
+	handleError(PhidgetSpatial_setDataRate(spatial_, rate), 8, "Spatial");
 }
 
 void Spatial::setTemperatureSensorDataRate(double rate)
 {
-	if (EPHIDGET_OK != PhidgetTemperatureSensor_setDataRate(temperature_sensor_, rate)) {
-		handleError();
-		exit(4);
-	}
+	handleError(PhidgetTemperatureSensor_setDataRate(temperature_sensor_, rate), 9,
+	            "Spatial");
 }
 
 void Spatial::publishSpatial()

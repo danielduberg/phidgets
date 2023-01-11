@@ -40,13 +40,10 @@ Motor::~Motor()
 	done_.store(true);
 	encoder_worker_.join();
 
-	if (EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(motor_left_)) ||
-	    EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(motor_right_)) ||
-	    EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_left_)) ||
-	    EPHIDGET_OK != Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_right_))) {
-		handleError();
-		exit(2);
-	}
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(motor_left_)), 2, "Motor");
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(motor_right_)), 2, "Motor");
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_left_)), 2, "Motor");
+	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_right_)), 2, "Motor");
 
 	PhidgetDCMotor_delete(&motor_left_);
 	PhidgetDCMotor_delete(&motor_right_);
@@ -66,17 +63,17 @@ void Motor::create()
 
 void Motor::setHubPort(int port_left, int port_right)
 {
-	if (EPHIDGET_OK !=
-	        Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_left_), port_left) ||
-	    EPHIDGET_OK !=
-	        Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_right_), port_right) ||
-	    EPHIDGET_OK !=
-	        Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_left_), port_left) ||
-	    EPHIDGET_OK != Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_right_),
-	                                      port_right)) {
-		handleError();
-		exit(3);
-	}
+	handleError(Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_left_), port_left),
+	            3, "Motor");
+	handleError(
+	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_right_), port_right), 3,
+	    "Motor");
+	handleError(
+	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_left_), port_left), 3,
+	    "Motor");
+	handleError(
+	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_right_), port_right), 3,
+	    "Motor");
 }
 
 void Motor::assignEventHandlers()
@@ -116,17 +113,18 @@ void Motor::assignEventHandlers()
 
 void Motor::attach(uint32_t timeout_ms)
 {
-	if (EPHIDGET_OK != Phidget_openWaitForAttachment(
-	                       reinterpret_cast<PhidgetHandle>(motor_left_), timeout_ms) ||
-	    EPHIDGET_OK != Phidget_openWaitForAttachment(
-	                       reinterpret_cast<PhidgetHandle>(motor_right_), timeout_ms) ||
-	    EPHIDGET_OK != Phidget_openWaitForAttachment(
-	                       reinterpret_cast<PhidgetHandle>(encoder_left_), timeout_ms) ||
-	    EPHIDGET_OK != Phidget_openWaitForAttachment(
-	                       reinterpret_cast<PhidgetHandle>(encoder_right_), timeout_ms)) {
-		handleError();
-		exit(4);
-	}
+	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(motor_left_),
+	                                          timeout_ms),
+	            4, "Motor");
+	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(motor_right_),
+	                                          timeout_ms),
+	            4, "Motor");
+	handleError(Phidget_openWaitForAttachment(
+	                reinterpret_cast<PhidgetHandle>(encoder_left_), timeout_ms),
+	            4, "Motor");
+	handleError(Phidget_openWaitForAttachment(
+	                reinterpret_cast<PhidgetHandle>(encoder_right_), timeout_ms),
+	            4, "Motor");
 }
 
 void Motor::encoderLeftCallback(PhidgetEncoderHandle ch, void* ctx, int position_change,
@@ -186,11 +184,8 @@ void Motor::encoderPublisher()
 
 void Motor::pwmCallback(PWM::ConstPtr const& msg)
 {
-	if (EPHIDGET_OK != PhidgetDCMotor_setTargetVelocity(motor_left_, msg->pwm_left) ||
-	    EPHIDGET_OK != PhidgetDCMotor_setTargetVelocity(motor_right_, msg->pwm_right)) {
-		handleError();
-		exit(4);
-	}
+	handleError(PhidgetDCMotor_setTargetVelocity(motor_left_, msg->pwm_left), 5, "Motor");
+	handleError(PhidgetDCMotor_setTargetVelocity(motor_right_, msg->pwm_right), 5, "Motor");
 }
 
 void Motor::configCallback(MotorConfig& config, uint32_t level) {}
