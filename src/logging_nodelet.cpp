@@ -34,7 +34,7 @@ void LoggingNodelet::callback(LoggingConfig& config, uint32_t level)
 		PhidgetLog_enable(static_cast<Phidget_LogLevel>(config.logging),
 		                  config.console
 		                      ? NULL
-		                      : (ros::package::getPath("phidgets") + "/phidget_log").c_str());
+		                      : (ros::package::getPath("phidgets") + "logs/phidget").c_str());
 	}
 
 	PhidgetLog_setRotating(config.rotating_size, config.rotating_max_files);
