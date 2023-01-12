@@ -1,78 +1,74 @@
 #ifndef PHIDGETS_MOTOR_H
 #define PHIDGETS_MOTOR_H
 
-// Phidgets
-#include <phidgets/PWM.h>
-
 // Phidget
 extern "C" {
 #include <phidget22.h>
 }
-
-// ROS
-#include <dynamic_reconfigure/server.h>
-#include <phidgets/MotorConfig.h>
-#include <ros/ros.h>
-
-// STL
-#include <condition_variable>
-#include <mutex>
-#include <queue>
-#include <thread>
-#include <atomic>
 
 namespace phidgets
 {
 class Motor
 {
  public:
-	Motor(ros::NodeHandle& nh, ros::NodeHandle& nh_priv);
+	Motor(int port, uint32_t attach_timeout_ms);
 
 	~Motor();
+
+	double acceleration() const;
+
+	void setAcceleration(double acceleration);
+
+	double targetBrakingStrength() const;
+
+	void setTargetBrakingStrength(double braking);
+
+	double brakingStrength() const;
+
+	double currentLimit() const;
+
+	void setCurrentLimit(double limit);
+
+	double dataRate() const;
+
+	void setDataRate(double rate);
+
+	void setFailsafe(uint32_t time_ms);
+
+	void resetFailsafe();
+
+	double targetVelocity() const;
+
+	void setTargetVelocity(double velocity);
+
+	double velocity() const;
+
+	int port() const;
 
  private:
 	void create();
 
-	void setHubPort(int port_left, int port_right);
-
 	void assignEventHandlers();
 
-	void attach(uint32_t timeout_ms);
+	void init();
 
-	static void CCONV encoderLeftCallback(PhidgetEncoderHandle ch, void* ctx,
-	                                      int position_change, double time_change,
-	                                      int index_triggered);
+	static void CCONV attachCallback(PhidgetHandle ch, void *ctx);
 
-	static void CCONV encoderRightCallback(PhidgetEncoderHandle ch, void* ctx,
-	                                       int position_change, double time_change,
-	                                       int index_triggered);
+	static void CCONV detachCallback(PhidgetHandle ch, void *ctx);
 
-	void encoderPublisher();
-
-	void pwmCallback(PWM::ConstPtr const& msg);
-
-	void configCallback(MotorConfig& config, uint32_t level);
+	static void CCONV errorCallback(PhidgetHandle ch, void *ctx,
+	                                Phidget_ErrorEventCode code, char const *description);
 
  private:
-	ros::Publisher encoder_pub_;
+	PhidgetDCMotorHandle motor_;
 
-	ros::Subscriber pwm_sub_;
+	int port_;
 
-	dynamic_reconfigure::Server<MotorConfig> server_;
-	dynamic_reconfigure::Server<MotorConfig>::CallbackType f_;
-
-	std::thread encoder_worker_;
-	std::mutex encoder_m_;
-	std::condition_variable encoder_cv_;
-	std::atomic_bool done_{false};
-	
-	PhidgetDCMotorHandle motor_left_;
-	PhidgetDCMotorHandle motor_right_;
-	PhidgetEncoderHandle encoder_left_;
-	PhidgetEncoderHandle encoder_right_;
-
-	std::queue<int> encoder_left_queue_;
-	std::queue<int> encoder_right_queue_;
+	double acceleration_{-1};
+	double target_braking_strength_{-1};
+	double current_limit_{-1};
+	double data_rate_{-1};
+	uint32_t failsafe_time_{0};
 };
 }  // namespace phidgets
 

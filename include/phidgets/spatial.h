@@ -1,6 +1,9 @@
 #ifndef PHIDGETS_SPATIAL_H
 #define PHIDGETS_SPATIAL_H
 
+// Phidgets
+#include <phidgets/SpatialConfig.h>
+
 // Phidget
 extern "C" {
 #include <phidget22.h>
@@ -8,8 +11,8 @@ extern "C" {
 
 // ROS
 #include <dynamic_reconfigure/server.h>
-#include <phidgets/SpatialConfig.h>
 #include <ros/ros.h>
+#include <std_srvs/Empty.h>
 #include <tf2/LinearMath/Quaternion.h>
 
 // STL
@@ -25,52 +28,83 @@ class Spatial
 
 	~Spatial();
 
-	double spatialDataRate() const;
+	void calibrate();
 
-	double temperatureSensorDataRate() const;
+	void setAHRSParameters(double angular_velocity_threshold,
+	                       double angular_velocity_delta_threshold,
+	                       double acceleration_threshold, double mag_time,
+	                       double accel_time, double bias_time);
+
+	Phidget_SpatialAlgorithm algorithm() const;
+
+	void setAlgorithm(Phidget_SpatialAlgorithm algorithm);
+
+	double dataRate() const;
+
+	void setDataRate(double rate);
+
+	bool heatingEnabled() const;
+
+	void setHeatingEnabled(bool enabled);
+
+	void setMagnetometerCorrectionParameters(double magnetic_field, double offset0,
+	                                         double offset1, double offset2, double gain0,
+	                                         double gain1, double gain2, double T0,
+	                                         double T1, double T2, double T3, double T4,
+	                                         double T5);
+
+	tf2::Quaternion quaternion() const;
+
+	void resetMagnetometerCorrectionParameters();
+
+	void saveMagnetometerCorrectionParameters();
+
+	void zeroAlgorithm();
+
+	void zeroGyro();
+
+	int port() const;
 
  private:
 	void create();
 
-	void setHubPort(int port);
-
 	void assignEventHandlers();
 
-	void attach(uint32_t timeout_ms);
+	void init();
 
-	void setHeating(bool enable);
+	void publish();
 
-	void setSpatialDataRate(double rate);
-
-	void setTemperatureSensorDataRate(double rate);
-
-	void publishSpatial();
+	static void CCONV algorithmCallback(PhidgetSpatialHandle ch, void *ctx,
+	                                    double const quaternion[4], double timestamp);
 
 	static void CCONV spatialCallback(PhidgetSpatialHandle ch, void *ctx,
 	                                  double const acceleration[3],
 	                                  double const angular_rate[3],
 	                                  double const magnetic_field[3], double timestamp);
 
-	static void CCONV algorithmCallback(PhidgetSpatialHandle ch, void *ctx,
-	                                    double const quaternion[4], double timestamp);
+	static void CCONV attachCallback(PhidgetHandle ch, void *ctx);
 
-	void publishTemp(double temp);
+	static void CCONV detachCallback(PhidgetHandle ch, void *ctx);
 
-	static void CCONV temperatureCallback(PhidgetTemperatureSensorHandle ch, void *ctx,
-	                                      double temperature);
+	static void CCONV errorCallback(PhidgetHandle ch, void *ctx,
+	                                Phidget_ErrorEventCode code, char const *description);
+
+	bool calibrateCallback(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res);
 
 	void configCallback(SpatialConfig &config, uint32_t level);
 
  private:
 	ros::Publisher imu_pub_;
 	ros::Publisher mag_pub_;
-	ros::Publisher temp_pub_;
+
+	ros::ServiceServer calibrate_srv_;
 
 	dynamic_reconfigure::Server<SpatialConfig> server_;
 	dynamic_reconfigure::Server<SpatialConfig>::CallbackType f_;
 
 	PhidgetSpatialHandle spatial_{};
-	PhidgetTemperatureSensorHandle temperature_sensor_{};
+
+	int port_;
 
 	std::string frame_id_{"imu_link"};
 
@@ -79,6 +113,38 @@ class Spatial
 	tf2::Vector3 linear_acceleration_;
 
 	tf2::Vector3 magnetic_field_;
+
+	bool initialized_{false};
+
+	double data_rate_{-1};
+
+	bool heating_enabled_{false};
+
+	// AHRS parameters
+	double angular_velocity_threshold_{};
+	double angular_velocity_delta_threshold_{};
+	double acceleration_threshold_{};
+	double mag_time_{};
+	double accel_time_{};
+	double bias_time_{};
+
+	// Algorithm
+	Phidget_SpatialAlgorithm algorithm_;
+
+	// Magnetometer correction parameters
+	double cp_magnetic_field_{};
+	double cp_offset0_{};
+	double cp_offset1_{};
+	double cp_offset2_{};
+	double cp_gain0_{};
+	double cp_gain1_{};
+	double cp_gain2_{};
+	double cp_T0_{};
+	double cp_T1_{};
+	double cp_T2_{};
+	double cp_T3_{};
+	double cp_T4_{};
+	double cp_T5_{};
 };
 
 void CCONV accelerationChange(PhidgetAccelerometerHandle ch, void *ctx,

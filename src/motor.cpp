@@ -1,192 +1,241 @@
 // Phidgets
-#include <phidgets/Encoder.h>
+#include <phidgets/error.h>
 #include <phidgets/motor.h>
 #include <phidgets/util.h>
 
-// ROS
-#include <ros/console.h>
+// STL
+#include <string>
 
 namespace phidgets
 {
-Motor::Motor(ros::NodeHandle& nh, ros::NodeHandle& nh_priv)
-    : server_(nh_priv), encoder_worker_(&Motor::encoderPublisher, this)
+Motor::Motor(int port, uint32_t attach_timeout_ms) : port_(port)
 {
-	encoder_pub_ = nh.advertise<Encoder>("encoder", 1);
-
-	int port_left, port_right;
-	if (!nh_priv.getParam("motor_left_port", port_left)) {
-		ROS_FATAL("Must specify 'motor_left_port'");
-		exit(1);
-	}
-	if (!nh_priv.getParam("motor_right_port", port_right)) {
-		ROS_FATAL("Must specify 'motor_right_port'");
-		exit(1);
-	}
-
 	create();
-	setHubPort(port_left, port_right);
 	assignEventHandlers();
-	attach(nh_priv.param("timeout", PHIDGET_TIMEOUT_DEFAULT));
-
-	pwm_sub_ = nh.subscribe<PWM>("pwm", 1, &Motor::pwmCallback, this);
-
-	// Dynamic reconfigure
-	f_ = boost::bind(&Motor::configCallback, this, _1, _2);
-	server_.setCallback(f_);
+	openWaitForAttachment(reinterpret_cast<PhidgetHandle>(motor_), port, attach_timeout_ms);
 }
 
-Motor::~Motor()
-{
-	done_.store(true);
-	encoder_worker_.join();
-
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(motor_left_)), 2, "Motor");
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(motor_right_)), 2, "Motor");
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_left_)), 2, "Motor");
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(encoder_right_)), 2, "Motor");
-
-	PhidgetDCMotor_delete(&motor_left_);
-	PhidgetDCMotor_delete(&motor_right_);
-
-	PhidgetEncoder_delete(&encoder_left_);
-	PhidgetEncoder_delete(&encoder_right_);
-}
+Motor::~Motor() { closeAndDelete(reinterpret_cast<PhidgetHandle *>(&motor_)); }
 
 void Motor::create()
 {
-	PhidgetDCMotor_create(&motor_left_);
-	PhidgetDCMotor_create(&motor_right_);
-
-	PhidgetEncoder_create(&encoder_left_);
-	PhidgetEncoder_create(&encoder_right_);
-}
-
-void Motor::setHubPort(int port_left, int port_right)
-{
-	handleError(Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_left_), port_left),
-	            3, "Motor");
-	handleError(
-	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(motor_right_), port_right), 3,
-	    "Motor");
-	handleError(
-	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_left_), port_left), 3,
-	    "Motor");
-	handleError(
-	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(encoder_right_), port_right), 3,
-	    "Motor");
+	PhidgetReturnCode ret = PhidgetDCMotor_create(&motor_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to create motor on port " + std::to_string(port_), ret);
+	}
 }
 
 void Motor::assignEventHandlers()
 {
-	static std::string motor_left_str{"Motor left"};
-	static std::string motor_right_str{"Motor right"};
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(motor_left_), attachCallback,
-	                           &motor_left_str);
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(motor_right_),
-	                           attachCallback, &motor_right_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(motor_left_), detachCallback,
-	                           &motor_left_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(motor_right_),
-	                           detachCallback, &motor_right_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(motor_left_), errorCallback,
-	                          &motor_left_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(motor_right_), errorCallback,
-	                          &motor_right_str);
+	PhidgetReturnCode ret;
 
-	static std::string encoder_left_str{"Encoder left"};
-	static std::string encoder_right_str{"Encoder right"};
-	PhidgetEncoder_setOnPositionChangeHandler(encoder_left_, encoderLeftCallback, this);
-	PhidgetEncoder_setOnPositionChangeHandler(encoder_right_, encoderRightCallback, this);
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(encoder_left_),
-	                           attachCallback, &encoder_left_str);
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(encoder_right_),
-	                           attachCallback, &encoder_right_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(encoder_left_),
-	                           detachCallback, &encoder_left_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(encoder_right_),
-	                           detachCallback, &encoder_right_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(encoder_left_), errorCallback,
-	                          &encoder_left_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(encoder_right_),
-	                          errorCallback, &encoder_right_str);
-}
+	ret = Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(motor_),
+	                                 attachCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set attach handler on port " + std::to_string(port_),
+		                   ret);
+	}
 
-void Motor::attach(uint32_t timeout_ms)
-{
-	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(motor_left_),
-	                                          timeout_ms),
-	            4, "Motor");
-	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(motor_right_),
-	                                          timeout_ms),
-	            4, "Motor");
-	handleError(Phidget_openWaitForAttachment(
-	                reinterpret_cast<PhidgetHandle>(encoder_left_), timeout_ms),
-	            4, "Motor");
-	handleError(Phidget_openWaitForAttachment(
-	                reinterpret_cast<PhidgetHandle>(encoder_right_), timeout_ms),
-	            4, "Motor");
-}
+	ret = Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(motor_),
+	                                 detachCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set detach handler on port " + std::to_string(port_),
+		                   ret);
+	}
 
-void Motor::encoderLeftCallback(PhidgetEncoderHandle ch, void* ctx, int position_change,
-                                double time_change, int index_triggered)
-{
-	std::unique_lock<std::mutex> lk(static_cast<Motor*>(ctx)->encoder_m_);
-	static_cast<Motor*>(ctx)->encoder_left_queue_.push(position_change);
-	lk.unlock();
-	static_cast<Motor*>(ctx)->encoder_cv_.notify_one();
-}
-
-void Motor::encoderRightCallback(PhidgetEncoderHandle ch, void* ctx, int position_change,
-                                 double time_change, int index_triggered)
-{
-	std::unique_lock<std::mutex> lk(static_cast<Motor*>(ctx)->encoder_m_);
-	static_cast<Motor*>(ctx)->encoder_right_queue_.push(position_change);
-	lk.unlock();
-	static_cast<Motor*>(ctx)->encoder_cv_.notify_one();
-}
-
-void Motor::encoderPublisher()
-{
-	std::queue<int> left, right;
-	Encoder msg;
-	while (!done_.load()) {
-		std::unique_lock<std::mutex> lk(encoder_m_);
-		encoder_cv_.wait(lk, [&] {
-			return !encoder_left_queue_.empty() && !encoder_right_queue_.empty();
-		});
-		std::swap(left, encoder_left_queue_);
-		std::swap(right, encoder_right_queue_);
-		lk.unlock();
-
-		while (left.size() > right.size()) {
-			left.pop();
-		}
-		while (right.size() > left.size()) {
-			right.pop();
-		}
-
-		while (!left.empty() && !right.empty()) {
-			msg.header.frame_id = "";
-			msg.header.stamp = ros::Time::now();
-
-			msg.delta_encoder_left = left.front();
-			msg.delta_encoder_right = right.front();
-			msg.encoder_left += msg.delta_encoder_left;
-			msg.encoder_right += msg.delta_encoder_right;
-
-			encoder_pub_.publish(msg);
-
-			left.pop();
-			right.pop();
-		}
+	ret = Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(motor_), errorCallback,
+	                                this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set error handler on port " + std::to_string(port_),
+		                   ret);
 	}
 }
 
-void Motor::pwmCallback(PWM::ConstPtr const& msg)
+double Motor::acceleration() const
 {
-	handleError(PhidgetDCMotor_setTargetVelocity(motor_left_, msg->pwm_left), 5, "Motor");
-	handleError(PhidgetDCMotor_setTargetVelocity(motor_right_, msg->pwm_right), 5, "Motor");
+	double acc;
+	PhidgetReturnCode ret = PhidgetDCMotor_getAcceleration(motor_, &acc);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get acceleration for motor on port " + std::to_string(port_), ret);
+	}
+	return acc;
 }
 
-void Motor::configCallback(MotorConfig& config, uint32_t level) {}
+void Motor::setAcceleration(double acceleration)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_setAcceleration(motor_, acceleration);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set acceleration for motor on port " + std::to_string(port_), ret);
+	}
+	acceleration_ = acceleration;
+}
+
+double Motor::targetBrakingStrength() const
+{
+	double braking;
+	PhidgetReturnCode ret = PhidgetDCMotor_getTargetBrakingStrength(motor_, &braking);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to get target braking strength for motor on port " +
+		                       std::to_string(port_),
+		                   ret);
+	}
+	return braking;
+}
+
+void Motor::setTargetBrakingStrength(double braking)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_setTargetBrakingStrength(motor_, braking);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set target braking strength for motor on port " +
+		                       std::to_string(port_),
+		                   ret);
+	}
+	target_braking_strength_ = braking;
+}
+
+double Motor::brakingStrength() const
+{
+	double braking;
+	PhidgetReturnCode ret = PhidgetDCMotor_getBrakingStrength(motor_, &braking);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get braking strength for motor on port " + std::to_string(port_), ret);
+	}
+	return braking;
+}
+
+double Motor::currentLimit() const
+{
+	double limit;
+	PhidgetReturnCode ret = PhidgetDCMotor_getCurrentLimit(motor_, &limit);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get current limit for motor on port " + std::to_string(port_), ret);
+	}
+	return limit;
+}
+
+void Motor::setCurrentLimit(double limit)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_setCurrentLimit(motor_, limit);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set current limit for motor on port " + std::to_string(port_), ret);
+	}
+	current_limit_ = limit;
+}
+
+double Motor::dataRate() const
+{
+	double rate;
+	PhidgetReturnCode ret = PhidgetDCMotor_getDataRate(motor_, &rate);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get data rate for motor on port " + std::to_string(port_), ret);
+	}
+	return rate;
+}
+
+void Motor::setDataRate(double rate)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_setDataRate(motor_, rate);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set data rate for motor on port " + std::to_string(port_), ret);
+	}
+	data_rate_ = rate;
+}
+
+void Motor::setFailsafe(uint32_t time_ms)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_enableFailsafe(motor_, time_ms);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to enable failsafe for motor on port " + std::to_string(port_), ret);
+	}
+	failsafe_time_ = time_ms;
+}
+
+void Motor::resetFailsafe()
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_resetFailsafe(motor_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to reset failsafe for motor on port " + std::to_string(port_), ret);
+	}
+}
+
+double Motor::targetVelocity() const
+{
+	double vel;
+	PhidgetReturnCode ret = PhidgetDCMotor_getTargetVelocity(motor_, &vel);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get target velocity for motor on port " + std::to_string(port_), ret);
+	}
+	return vel;
+}
+
+void Motor::setTargetVelocity(double velocity)
+{
+	PhidgetReturnCode ret = PhidgetDCMotor_setTargetVelocity(motor_, velocity);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set target velocity for motor on port " + std::to_string(port_), ret);
+	}
+}
+
+double Motor::velocity() const
+{
+	double vel;
+	PhidgetReturnCode ret = PhidgetDCMotor_getVelocity(motor_, &vel);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get velocity for motor on port " + std::to_string(port_), ret);
+	}
+	return vel;
+}
+
+int Motor::port() const { return port_; }
+
+void Motor::init()
+{
+	if (0 <= acceleration_) {
+		setAcceleration(acceleration_);
+	}
+	if (0 <= target_braking_strength_) {
+		setTargetBrakingStrength(target_braking_strength_);
+	}
+	if (0 <= current_limit_) {
+		setCurrentLimit(current_limit_);
+	}
+	if (0 <= data_rate_) {
+		setDataRate(data_rate_);
+	}
+	if (0 < failsafe_time_) {
+		setFailsafe(failsafe_time_);
+	}
+}
+
+void Motor::attachCallback(PhidgetHandle ch, void *ctx)
+{
+	printf("Attach motor on port %d\n", static_cast<Motor *>(ctx)->port());
+	static_cast<Motor *>(ctx)->init();
+}
+
+void Motor::detachCallback(PhidgetHandle ch, void *ctx)
+{
+	printf("Detach motor on port %d\n", static_cast<Motor *>(ctx)->port());
+}
+
+void Motor::errorCallback(PhidgetHandle ch, void *ctx, Phidget_ErrorEventCode code,
+                          char const *description)
+{
+	fprintf(stderr, "\x1B[31mError motor on port %d: %s\033[0m\n", static_cast<Motor *>(ctx)->port(),
+	        description);
+	fprintf(stderr, "----------\n");
+	PhidgetLog_log(PHIDGET_LOG_ERROR, "Error %d: %s", code, description);
+}
 }  // namespace phidgets

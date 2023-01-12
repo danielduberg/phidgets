@@ -1,4 +1,8 @@
 <launch>
+	<arg name="motor_left_port" default="4"/>
+	<arg name="motor_right_port" default="2"/>
+  <arg name="imu_port" default="0"/>
+
   <arg name="manager" default="phidgets_manager" doc="Nodelet manager for this nodelet" />
 
   <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen"/>
@@ -6,12 +10,26 @@
   <include file="$(find phidgets)/launch/logging.launch">
     <arg name="manager" value="$(arg manager)"/>
   </include>
-  
-  <include file="$(find phidgets)/launch/spatial.launch">
+
+  <include file="$(find phidgets)/launch/motors.launch">
     <arg name="manager" value="$(arg manager)"/>
+    <arg name="left_port" default="$(arg motor_left_port)"/>
+    <arg name="right_port" default="$(arg motor_right_port)"/>
   </include>
 
-  <include file="$(find phidgets)/launch/motor.launch">
+  <include file="$(find phidgets)/launch/encoders.launch">
     <arg name="manager" value="$(arg manager)"/>
+    <arg name="left_port" default="$(arg motor_left_port)"/>
+    <arg name="right_port" default="$(arg motor_right_port)"/>
+  </include>
+
+  <include file="$(find phidgets)/launch/spatial.launch">
+    <arg name="manager" value="$(arg manager)"/>
+    <arg name="port" default="$(arg imu_port)"/>
+  </include>
+
+  <include file="$(find phidgets)/launch/temperature.launch">
+    <arg name="manager" value="$(arg manager)"/>
+    <arg name="port" default="$(arg imu_port)"/>
   </include>
 </launch>

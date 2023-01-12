@@ -8,14 +8,10 @@ extern "C" {
 
 namespace phidgets
 {
-void handleError(PhidgetReturnCode ret_code, int exit_status, char const *name = "");
 
-void CCONV attachCallback(PhidgetHandle ch, void *ctx);
+void openWaitForAttachment(PhidgetHandle handle, int hub_port, uint32_t timeout_ms);
 
-void CCONV detachCallback(PhidgetHandle ch, void *ctx);
-
-void CCONV errorCallback(PhidgetHandle ch, void *ctx, Phidget_ErrorEventCode code,
-                         char const *description);
+void closeAndDelete(PhidgetHandle *handle);
 }  // namespace phidgets
 
 #endif  // PHIDGETS_ERROR_HANDLING_H

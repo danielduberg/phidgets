@@ -1,199 +1,381 @@
 // Phidgets
+#include <phidgets/error.h>
 #include <phidgets/spatial.h>
 #include <phidgets/util.h>
 
 // ROS
-#include <ros/console.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/MagneticField.h>
-#include <sensor_msgs/Temperature.h>
-#include <std_msgs/Bool.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 // STL
 
 namespace phidgets
 {
-Spatial::Spatial(ros::NodeHandle& nh, ros::NodeHandle& nh_priv) : server_(nh_priv)
+Spatial::Spatial(ros::NodeHandle &nh, ros::NodeHandle &nh_priv) : server_(nh_priv)
 {
-	imu_pub_ = nh.advertise<sensor_msgs::Imu>("imu/data_raw", 1);
-	mag_pub_ = nh.advertise<sensor_msgs::MagneticField>("imu/mag", 1);
-	temp_pub_ = nh.advertise<sensor_msgs::Temperature>("imu/temp", 1);
+	imu_pub_ = nh_priv.advertise<sensor_msgs::Imu>("data_raw", 1);
+	mag_pub_ = nh_priv.advertise<sensor_msgs::MagneticField>("mag", 1);
 
-	int port;
-	if (!nh_priv.getParam("imu_port", port)) {
-		ROS_FATAL("Must specify 'imu_port'");
+	if (!nh_priv.getParam("port", port_)) {
+		ROS_FATAL("Must specify 'port'");
 		exit(1);
 	}
 
 	create();
-	setHubPort(port);
 	assignEventHandlers();
-	attach(nh_priv.param("timeout", PHIDGET_TIMEOUT_DEFAULT));
+	openWaitForAttachment(reinterpret_cast<PhidgetHandle>(spatial_), port_,
+	                      nh_priv.param("timeout", PHIDGET_TIMEOUT_DEFAULT));
+
+	calibrate_srv_ =
+	    nh_priv.advertiseService("calibrate", &Spatial::calibrateCallback, this);
+
+	calibrate();
 
 	// Dynamic reconfigure
 	f_ = boost::bind(&Spatial::configCallback, this, _1, _2);
 	server_.setCallback(f_);
 }
 
-Spatial::~Spatial()
-{
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(spatial_)), 2, "Spatial");
-	handleError(Phidget_close(reinterpret_cast<PhidgetHandle>(temperature_sensor_)), 2,
-	            "Spatial");
-
-	PhidgetSpatial_delete(&spatial_);
-	PhidgetTemperatureSensor_delete(&temperature_sensor_);
-}
-
-double Spatial::spatialDataRate() const
-{
-	double r;
-	handleError(PhidgetSpatial_getDataRate(spatial_, &r), 3, "Spatial");
-	return r;
-}
-
-double Spatial::temperatureSensorDataRate() const
-{
-	double r;
-	handleError(PhidgetTemperatureSensor_getDataRate(temperature_sensor_, &r), 4,
-	            "Spatial");
-	return r;
-}
+Spatial::~Spatial() { closeAndDelete(reinterpret_cast<PhidgetHandle *>(&spatial_)); }
 
 void Spatial::create()
 {
-	PhidgetSpatial_create(&spatial_);
-	PhidgetTemperatureSensor_create(&temperature_sensor_);
-}
-
-void Spatial::setHubPort(int port)
-{
-	handleError(Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(spatial_), port), 5,
-	            "Spatial");
-	handleError(
-	    Phidget_setHubPort(reinterpret_cast<PhidgetHandle>(temperature_sensor_), port), 5,
-	    "Spatial");
+	PhidgetReturnCode ret = PhidgetSpatial_create(&spatial_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to create temperature sensor on port " + std::to_string(port_), ret);
+	}
 }
 
 void Spatial::assignEventHandlers()
 {
-	static std::string spatial_str{"Spatial"};
-	PhidgetSpatial_setOnSpatialDataHandler(spatial_, spatialCallback, this);
-	PhidgetSpatial_setOnAlgorithmDataHandler(spatial_, algorithmCallback, this);
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(spatial_), attachCallback,
-	                           &spatial_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(spatial_), detachCallback,
-	                           &spatial_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(spatial_), errorCallback,
-	                          &spatial_str);
+	PhidgetReturnCode ret;
 
-	static std::string temperature_sensor_str{"Temperature sensor"};
-	PhidgetTemperatureSensor_setOnTemperatureChangeHandler(temperature_sensor_,
-	                                                       temperatureCallback, this);
-	Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(temperature_sensor_),
-	                           attachCallback, &temperature_sensor_str);
-	Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(temperature_sensor_),
-	                           detachCallback, &temperature_sensor_str);
-	Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(temperature_sensor_),
-	                          errorCallback, &temperature_sensor_str);
+	ret = PhidgetSpatial_setOnAlgorithmDataHandler(spatial_, algorithmCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set on algorithm data handler on port " + std::to_string(port_), ret);
+	}
+
+	ret = PhidgetSpatial_setOnSpatialDataHandler(spatial_, spatialCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set on spatial data handler on port " + std::to_string(port_), ret);
+	}
+
+	ret = Phidget_setOnAttachHandler(reinterpret_cast<PhidgetHandle>(spatial_),
+	                                 attachCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set attach handler on port " + std::to_string(port_),
+		                   ret);
+	}
+
+	ret = Phidget_setOnDetachHandler(reinterpret_cast<PhidgetHandle>(spatial_),
+	                                 detachCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set detach handler on port " + std::to_string(port_),
+		                   ret);
+	}
+
+	ret = Phidget_setOnErrorHandler(reinterpret_cast<PhidgetHandle>(spatial_),
+	                                errorCallback, this);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to set error handler on port " + std::to_string(port_),
+		                   ret);
+	}
 }
 
-void Spatial::attach(uint32_t timeout_ms)
+void Spatial::calibrate()
 {
-	handleError(Phidget_openWaitForAttachment(reinterpret_cast<PhidgetHandle>(spatial_),
-	                                          timeout_ms),
-	            6, "Spatial");
-	handleError(Phidget_openWaitForAttachment(
-	                reinterpret_cast<PhidgetHandle>(temperature_sensor_), timeout_ms),
-	            6, "Spatial");
+	ROS_INFO(
+	    "Calibrating IMU, this takes around 2 seconds to finish. Make sure that the device "
+	    "is not moved during this time.");
+	zeroGyro();
+	ros::Duration(2.0).sleep();
+	ROS_INFO("Calibrating IMU done.");
 }
 
-void Spatial::setHeating(bool enable)
+void Spatial::setAHRSParameters(double angular_velocity_threshold,
+                                double angular_velocity_delta_threshold,
+                                double acceleration_threshold, double mag_time,
+                                double accel_time, double bias_time)
 {
-	handleError(PhidgetSpatial_setHeatingEnabled(spatial_, enable), 7, "Spatial");
+	PhidgetReturnCode ret = PhidgetSpatial_setAHRSParameters(
+	    spatial_, angular_velocity_threshold, angular_velocity_delta_threshold,
+	    acceleration_threshold, mag_time, accel_time, bias_time);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set AHRS parameters for spatial on port " + std::to_string(port_),
+		    ret);
+	}
+	angular_velocity_threshold_ = angular_velocity_threshold;
+	angular_velocity_delta_threshold_ = angular_velocity_delta_threshold;
+	acceleration_threshold_ = acceleration_threshold;
+	mag_time_ = mag_time;
+	accel_time_ = accel_time;
+	bias_time_ = bias_time;
 }
 
-void Spatial::setSpatialDataRate(double rate)
+Phidget_SpatialAlgorithm Spatial::algorithm() const
 {
-	handleError(PhidgetSpatial_setDataRate(spatial_, rate), 8, "Spatial");
+	Phidget_SpatialAlgorithm alg;
+	PhidgetReturnCode ret = PhidgetSpatial_getAlgorithm(spatial_, &alg);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get algorithm for spatial on port " + std::to_string(port_), ret);
+	}
+	return alg;
 }
 
-void Spatial::setTemperatureSensorDataRate(double rate)
+void Spatial::setAlgorithm(Phidget_SpatialAlgorithm algorithm)
 {
-	handleError(PhidgetTemperatureSensor_setDataRate(temperature_sensor_, rate), 9,
-	            "Spatial");
+	PhidgetReturnCode ret = PhidgetSpatial_setAlgorithm(spatial_, algorithm);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set algorithm for spatial on port " + std::to_string(port_), ret);
+	}
+	algorithm_ = algorithm;
 }
 
-void Spatial::publishSpatial()
+double Spatial::dataRate() const
 {
+	double rate;
+	PhidgetReturnCode ret = PhidgetSpatial_getDataRate(spatial_, &rate);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get data rate for spatial on port " + std::to_string(port_), ret);
+	}
+	return rate;
+}
+
+void Spatial::setDataRate(double rate)
+{
+	PhidgetReturnCode ret = PhidgetSpatial_setDataRate(spatial_, rate);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set data rate for spatial on port " + std::to_string(port_), ret);
+	}
+	data_rate_ = rate;
+}
+
+bool Spatial::heatingEnabled() const
+{
+	int enabled;
+	PhidgetReturnCode ret = PhidgetSpatial_getHeatingEnabled(spatial_, &enabled);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get heating enabled for spatial on port " + std::to_string(port_),
+		    ret);
+	}
+	return enabled;
+}
+
+void Spatial::setHeatingEnabled(bool enabled)
+{
+	PhidgetReturnCode ret = PhidgetSpatial_setDataRate(spatial_, enabled);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set heating enabled for spatial on port " + std::to_string(port_),
+		    ret);
+	}
+	heating_enabled_ = enabled;
+}
+
+void Spatial::setMagnetometerCorrectionParameters(double magnetic_field, double offset0,
+                                                  double offset1, double offset2,
+                                                  double gain0, double gain1,
+                                                  double gain2, double T0, double T1,
+                                                  double T2, double T3, double T4,
+                                                  double T5)
+{
+	PhidgetReturnCode ret = PhidgetSpatial_setMagnetometerCorrectionParameters(
+	    spatial_, magnetic_field, offset0, offset1, offset2, gain0, gain1, gain2, T0, T1,
+	    T2, T3, T4, T5);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to set magnetometer correction parameters for spatial on port " +
+		        std::to_string(port_),
+		    ret);
+	}
+	cp_magnetic_field_ = magnetic_field;
+	cp_offset0_ = offset0;
+	cp_offset1_ = offset1;
+	cp_offset2_ = offset2;
+	cp_gain0_ = gain0;
+	cp_gain1_ = gain1;
+	cp_gain2_ = gain2;
+	cp_T0_ = T0;
+	cp_T1_ = T1;
+	cp_T2_ = T2;
+	cp_T3_ = T3;
+	cp_T4_ = T4;
+	cp_T5_ = T5;
+}
+
+tf2::Quaternion Spatial::quaternion() const
+{
+	PhidgetSpatial_SpatialQuaternion quat;
+	PhidgetReturnCode ret = PhidgetSpatial_getQuaternion(spatial_, &quat);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to get quaternion for spatial on port " + std::to_string(port_), ret);
+	}
+	return {quat.x, quat.y, quat.z, quat.w};
+}
+
+void Spatial::resetMagnetometerCorrectionParameters()
+{
+	PhidgetReturnCode ret = PhidgetSpatial_resetMagnetometerCorrectionParameters(spatial_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to reset magnetometer correction parameters for spatial on port " +
+		        std::to_string(port_),
+		    ret);
+	}
+}
+
+void Spatial::saveMagnetometerCorrectionParameters()
+{
+	PhidgetReturnCode ret = PhidgetSpatial_saveMagnetometerCorrectionParameters(spatial_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to save magnetometer correction parameters for spatial on port " +
+		        std::to_string(port_),
+		    ret);
+	}
+}
+
+void Spatial::zeroAlgorithm()
+{
+	PhidgetReturnCode ret = PhidgetSpatial_zeroAlgorithm(spatial_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError(
+		    "Failed to zero algorithm for spatial on port " + std::to_string(port_), ret);
+	}
+}
+
+void Spatial::zeroGyro()
+{
+	PhidgetReturnCode ret = PhidgetSpatial_zeroGyro(spatial_);
+	if (EPHIDGET_OK != ret) {
+		throw PhidgetError("Failed to zero gyro for spatial on port " + std::to_string(port_),
+		                   ret);
+	}
+}
+
+int Spatial::port() const { return port_; }
+
+void Spatial::init()
+{
+	orientation_ = tf2::Quaternion(0, 0, 0, 1);
+	angular_velocity_ = tf2::Vector3();
+	linear_acceleration_ = tf2::Vector3();
+	magnetic_field_ = tf2::Vector3();
+
+	if (!initialized_) {
+		return;
+	}
+
+	if (0 <= data_rate_) {
+		setDataRate(data_rate_);
+	}
+	if (heatingEnabled() != heating_enabled_) {
+		setHeatingEnabled(heating_enabled_);
+	}
+	setAHRSParameters(angular_velocity_threshold_, angular_velocity_delta_threshold_,
+	                  acceleration_threshold_, mag_time_, accel_time_, bias_time_);
+	setAlgorithm(algorithm_);
+	setMagnetometerCorrectionParameters(cp_magnetic_field_, cp_offset0_, cp_offset1_,
+	                                    cp_offset2_, cp_gain0_, cp_gain1_, cp_gain2_,
+	                                    cp_T0_, cp_T1_, cp_T2_, cp_T3_, cp_T4_, cp_T5_);
+}
+
+void Spatial::publish()
+{
+	// TODO: Fix
 	sensor_msgs::Imu::Ptr imu_msg(new sensor_msgs::Imu);
-	imu_msg->header.stamp = ros::Time::now();
 	imu_msg->header.frame_id = frame_id_;
-
+	imu_msg->header.stamp = ros::Time::now();
 	imu_msg->orientation = tf2::toMsg(orientation_);
-
+	// TODO: imu_msg->orientation_covariance = ...;
 	imu_msg->angular_velocity = tf2::toMsg(angular_velocity_);
-
+	// TODO: imu_msg->angular_velocity_covariance = ...;
 	imu_msg->linear_acceleration = tf2::toMsg(linear_acceleration_);
+	// TODO: imu_msg->linear_acceleration_covariance = ...;
+
+	sensor_msgs::MagneticField::Ptr mag_msg(new sensor_msgs::MagneticField);
+	mag_msg->header = imu_msg->header;
+	mag_msg->magnetic_field = tf2::toMsg(magnetic_field_);
+	// TODO: mag_msg->magnetic_field_covariance = ...;
 
 	imu_pub_.publish(imu_msg);
-
-	sensor_msgs::MagneticField::Ptr msg_msg(new sensor_msgs::MagneticField);
-	msg_msg->header = imu_msg->header;
-	msg_msg->magnetic_field = tf2::toMsg(magnetic_field_);
-	mag_pub_.publish(msg_msg);
+	mag_pub_.publish(mag_msg);
 }
 
-void Spatial::spatialCallback(PhidgetSpatialHandle ch, void* ctx,
-                              double const acceleration[3], double const angular_rate[3],
-                              double const magnetic_field[3], double timestamp)
+void Spatial::algorithmCallback(PhidgetSpatialHandle ch, void *ctx, double const q[4],
+                                double timestamp)
 {
-	Spatial* s = static_cast<Spatial*>(ctx);
-
-	s->linear_acceleration_ =
-	    tf2::Vector3(acceleration[0], acceleration[1], acceleration[2]);
-	s->angular_velocity_ = tf2::Vector3(angular_rate[0], angular_rate[1], angular_rate[2]);
-	s->magnetic_field_ =
-	    tf2::Vector3(magnetic_field[0], magnetic_field[1], magnetic_field[2]);
-
-	s->publishSpatial();
+	Spatial *s = static_cast<Spatial *>(ctx);
+	s->orientation_ = tf2::Quaternion(q[0], q[1], q[2], q[3]);
 }
 
-void Spatial::algorithmCallback(PhidgetSpatialHandle ch, void* ctx,
-                                double const quaternion[4], double timestamp)
+void Spatial::spatialCallback(PhidgetSpatialHandle ch, void *ctx, double const acc[3],
+                              double const ar[3], double const mag[3], double timestamp)
 {
-	static_cast<Spatial*>(ctx)->orientation_ =
-	    tf2::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+	Spatial *s = static_cast<Spatial *>(ctx);
+	s->angular_velocity_ = tf2::Vector3(ar[0], ar[1], ar[2]);
+	s->linear_acceleration_ = tf2::Vector3(acc[0], acc[1], acc[2]);
+	s->magnetic_field_ = tf2::Vector3(mag[0], mag[1], mag[2]);
+	s->publish();
 }
 
-void Spatial::publishTemp(double temp)
+void Spatial::attachCallback(PhidgetHandle ch, void *ctx)
 {
-	sensor_msgs::Temperature::Ptr temp_msg(new sensor_msgs::Temperature);
-	temp_msg->header.stamp = ros::Time::now();
-	temp_msg->header.frame_id = frame_id_;
-	temp_msg->temperature = temp;
-	temp_pub_.publish(temp_msg);
+	printf("Attach spatial on port %d\n", static_cast<Spatial *>(ctx)->port());
+	static_cast<Spatial *>(ctx)->init();
 }
 
-void Spatial::temperatureCallback(PhidgetTemperatureSensorHandle ch, void* ctx,
-                                  double temperature)
+void Spatial::detachCallback(PhidgetHandle ch, void *ctx)
 {
-	static_cast<Spatial*>(ctx)->publishTemp(temperature);
+	printf("Detach spatial on port %d\n", static_cast<Spatial *>(ctx)->port());
 }
 
-void Spatial::configCallback(phidgets::SpatialConfig& config, uint32_t level)
+void Spatial::errorCallback(PhidgetHandle ch, void *ctx, Phidget_ErrorEventCode code,
+                            char const *description)
+{
+	fprintf(stderr, "\x1B[31mError spatial on port %d: %s\033[0m\n",
+	        static_cast<Spatial *>(ctx)->port(), description);
+	fprintf(stderr, "----------\n");
+	PhidgetLog_log(PHIDGET_LOG_ERROR, "Error %d: %s", code, description);
+}
+
+bool Spatial::calibrateCallback(std_srvs::Empty::Request &, std_srvs::Empty::Response &)
+{
+	calibrate();
+	return true;
+}
+
+void Spatial::configCallback(SpatialConfig &config, uint32_t level)
 {
 	frame_id_ = config.frame_id;
 
-	setHeating(config.heating_enabled);
-
-	if (spatialDataRate() != config.spatial_data_rate) {
-		setSpatialDataRate(config.spatial_data_rate);
+	setDataRate(config.data_rate);
+	setAlgorithm(0 == config.algorithm ? SPATIAL_ALGORITHM_NONE
+	                                   : (1 == config.algorithm ? SPATIAL_ALGORITHM_AHRS
+	                                                            : SPATIAL_ALGORITHM_IMU));
+	setAHRSParameters(config.ahrs_angular_velocity_threshold,
+	                  config.ahrs_angular_velocity_delta_threshold,
+	                  config.ahrs_acceleration_threshold, config.ahrs_mag_time,
+	                  config.ahrs_accel_time, config.ahrs_bias_time);
+	if (heatingEnabled() != config.heating_enabled) {
+		setHeatingEnabled(config.heating_enabled);
 	}
+	setMagnetometerCorrectionParameters(
+	    config.cc_mag_field, config.cc_offset0, config.cc_offset1, config.cc_offset2,
+	    config.cc_gain0, config.cc_gain1, config.cc_gain2, config.cc_t0, config.cc_t1,
+	    config.cc_t2, config.cc_t3, config.cc_t4, config.cc_t5);
 
-	if (temperatureSensorDataRate() != config.temperature_data_rate) {
-		setTemperatureSensorDataRate(config.temperature_data_rate);
-	}
+	initialized_ = true;
 }
 }  // namespace phidgets
