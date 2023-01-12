@@ -401,6 +401,9 @@ void Spatial::attachCallback(PhidgetHandle ch, void *ctx)
 {
 	printf("Attach spatial on port %d\n", static_cast<Spatial *>(ctx)->port());
 	static_cast<Spatial *>(ctx)->init();
+	static_cast<Spatial *>(ctx)->synchronize_timestamps_ = true;
+	static_cast<Spatial *>(ctx)->can_publish_ = false;
+	static_cast<Spatial *>(ctx)->last_cb_time_ = ros::Time(0);
 }
 
 void Spatial::detachCallback(PhidgetHandle ch, void *ctx)
