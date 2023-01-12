@@ -1,6 +1,6 @@
 // Phidgets
-#include <phidgets/EncodersT.h>
 #include <phidgets/encoders.h>
+#include <phidgets_msgs/Encoders.h>
 
 namespace phidgets
 {
@@ -19,7 +19,7 @@ Encoders::Encoders(ros::NodeHandle& nh, ros::NodeHandle& nh_priv)
 
 	uint32_t attach_timeout_ms = nh_priv.param("timeout", PHIDGET_TIMEOUT_DEFAULT);
 
-	pub_ = nh_priv.advertise<EncodersT>("encoders", 1);
+	pub_ = nh_priv.advertise<phidgets_msgs::Encoders>("encoders", 1);
 
 	left_ = std::make_unique<Encoder>(port_left, attach_timeout_ms);
 	right_ = std::make_unique<Encoder>(port_right, attach_timeout_ms);
@@ -33,7 +33,7 @@ Encoders::~Encoders() {}
 
 void Encoders::publish(ros::TimerEvent const&)
 {
-	EncodersT::Ptr msg(new EncodersT);
+	phidgets_msgs::Encoders::Ptr msg(new phidgets_msgs::Encoders);
 	msg->header.stamp = ros::Time::now();
 	msg->header.frame_id = "";
 

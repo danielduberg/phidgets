@@ -29,7 +29,7 @@ Motors::Motors(ros::NodeHandle& nh, ros::NodeHandle& nh_priv) : server_(nh_priv)
 
 Motors::~Motors() {}
 
-void Motors::dutyCyclesCallback(DutyCycles::ConstPtr const& msg)
+void Motors::dutyCyclesCallback(phidgets_msgs::DutyCycles::ConstPtr const& msg)
 {
 	left_->setTargetVelocity(msg->duty_cycle_left);
 	right_->setTargetVelocity(msg->duty_cycle_right);

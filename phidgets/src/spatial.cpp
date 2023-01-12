@@ -293,21 +293,42 @@ void Spatial::init()
 
 void Spatial::publish()
 {
-	// TODO: Fix
+	uint64_t imu_diff_in_ns = last_data_timestamp_ns_ - data_time_zero_ns_;
+	uint64_t time_in_ns = ros_time_zero_.toNSec() + imu_diff_in_ns;
+
+	if (time_in_ns < last_ros_stamp_ns_) {
+		ROS_WARN("Time went backwards (%lu < %lu)! Not publishing message.", time_in_ns,
+		         last_ros_stamp_ns_);
+		return;
+	}
+	last_ros_stamp_ns_ = time_in_ns;
+	ros::Time ros_time = ros::Time().fromNSec(time_in_ns);
+
 	sensor_msgs::Imu::Ptr imu_msg(new sensor_msgs::Imu);
 	imu_msg->header.frame_id = frame_id_;
-	imu_msg->header.stamp = ros::Time::now();
-	imu_msg->orientation = tf2::toMsg(orientation_);
-	// TODO: imu_msg->orientation_covariance = ...;
-	imu_msg->angular_velocity = tf2::toMsg(angular_velocity_);
-	// TODO: imu_msg->angular_velocity_covariance = ...;
-	imu_msg->linear_acceleration = tf2::toMsg(linear_acceleration_);
-	// TODO: imu_msg->linear_acceleration_covariance = ...;
+	imu_msg->header.stamp = ros_time;
 
 	sensor_msgs::MagneticField::Ptr mag_msg(new sensor_msgs::MagneticField);
 	mag_msg->header = imu_msg->header;
+
+	// build covariance matrices
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			if (i == j) {
+				int idx = j * 3 + i;
+				imu_msg->angular_velocity_covariance[idx] = angular_velocity_variance_;
+				imu_msg->linear_acceleration_covariance[idx] = linear_acceleration_variance_;
+				mag_msg->magnetic_field_covariance[idx] = magnetic_field_variance_;
+			}
+		}
+	}
+
+	imu_msg->orientation = tf2::toMsg(orientation_);
+	// TODO: imu_msg->orientation_covariance = ...;
+	imu_msg->angular_velocity = tf2::toMsg(angular_velocity_);
+	imu_msg->linear_acceleration = tf2::toMsg(linear_acceleration_);
+
 	mag_msg->magnetic_field = tf2::toMsg(magnetic_field_);
-	// TODO: mag_msg->magnetic_field_covariance = ...;
 
 	imu_pub_.publish(imu_msg);
 	mag_pub_.publish(mag_msg);
@@ -324,10 +345,56 @@ void Spatial::spatialCallback(PhidgetSpatialHandle ch, void *ctx, double const a
                               double const ar[3], double const mag[3], double timestamp)
 {
 	Spatial *s = static_cast<Spatial *>(ctx);
-	s->angular_velocity_ = tf2::Vector3(ar[0], ar[1], ar[2]);
-	s->linear_acceleration_ = tf2::Vector3(acc[0], acc[1], acc[2]);
-	s->magnetic_field_ = tf2::Vector3(mag[0], mag[1], mag[2]);
-	s->publish();
+
+	ros::Time now = ros::Time::now();
+
+	if (0 == s->last_cb_time_.sec && 0 == s->last_cb_time_.nsec) {
+		s->last_cb_time_ = now;
+		return;
+	}
+
+	ros::Duration time_since_last_cb = now - s->last_cb_time_;
+	uint64_t this_ts_ns = static_cast<uint64_t>(timestamp * 1000.0 * 1000.0);
+
+	if (s->synchronize_timestamps_) {
+		if (time_since_last_cb.toNSec() >= (s->data_interval_ns_ - s->cb_delta_epsilon_ns_) &&
+		    time_since_last_cb.toNSec() <= (s->data_interval_ns_ + s->cb_delta_epsilon_ns_)) {
+			s->ros_time_zero_ = now;
+			s->data_time_zero_ns_ = this_ts_ns;
+			s->synchronize_timestamps_ = false;
+			s->can_publish_ = true;
+		} else {
+			ROS_DEBUG(
+			    "Data not within acceptable window for synchronization: "
+			    "expected between %ld and %ld, saw %ld",
+			    s->data_interval_ns_ - s->cb_delta_epsilon_ns_,
+			    s->data_interval_ns_ + s->cb_delta_epsilon_ns_, time_since_last_cb.toNSec());
+		}
+	}
+
+	if (s->can_publish_) {
+		constexpr double g = 9.80665;
+
+		s->angular_velocity_ = tf2::Vector3(ar[0], ar[1], ar[2]) * (M_PI / 180.0);
+		s->linear_acceleration_ = tf2::Vector3(acc[0], acc[1], acc[2]) * -g;
+		if (PUNK_DBL != mag[0]) {
+			s->magnetic_field_ = tf2::Vector3(mag[0], mag[1], mag[2]) * 1e-4;
+		} else {
+			constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+			s->magnetic_field_ = tf2::Vector3(nan, nan, nan);
+		}
+
+		s->last_data_timestamp_ns_ = this_ts_ns;
+
+		s->publish();
+	}
+
+	ros::Duration diff = now - s->ros_time_zero_;
+	if (0 < s->time_resync_interval_ns_ && diff.toNSec() >= s->time_resync_interval_ns_) {
+		s->synchronize_timestamps_ = true;
+	}
+
+	s->last_cb_time_ = now;
 }
 
 void Spatial::attachCallback(PhidgetHandle ch, void *ctx)

@@ -2,7 +2,7 @@
 #define PHIDGETS_MOTORS_H
 
 // Phidgets
-#include <phidgets/DutyCycles.h>
+#include <phidgets_msgs/DutyCycles.h>
 #include <phidgets/MotorConfig.h>
 #include <phidgets/motor.h>
 
@@ -22,7 +22,7 @@ class Motors
 	~Motors();
 
  private:
-	void dutyCyclesCallback(DutyCycles::ConstPtr const& msg);
+	void dutyCyclesCallback(phidgets_msgs::DutyCycles::ConstPtr const& msg);
 
 	void configCallback(MotorConfig& config, uint32_t level);
 

@@ -23,24 +23,13 @@ find_package(catkin REQUIRED COMPONENTS
   imu_filter_madgwick
   message_generation
   nodelet
+  phidgets_msgs
   roscpp
   roslaunch
   roslib
   sensor_msgs
-  std_msgs
   std_srvs
   tf2_geometry_msgs
-)
-
-add_message_files(
-  FILES
-  EncodersT.msg
-  DutyCycles.msg
-)
-
-generate_messages(
-  DEPENDENCIES
-  std_msgs
 )
 
 generate_dynamic_reconfigure_options(
@@ -54,7 +43,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES phidgets_util phidgets_motor phidgets_motors phidgets_encoder phidgets_encoders phidgets_spatial phidgets_temperature
-  CATKIN_DEPENDS message_runtime nodelet dynamic_reconfigure roscpp roslib sensor_msgs std_msgs std_srvs
+  CATKIN_DEPENDS nodelet dynamic_reconfigure phidgets_msgs roscpp roslib sensor_msgs std_msgs std_srvs
 )
 
 include_directories(

@@ -108,10 +108,25 @@ class Spatial
 
 	std::string frame_id_{"imu_link"};
 
+	// Time
+	ros::Time ros_time_zero_;
+	bool synchronize_timestamps_{true};
+	uint64_t data_time_zero_ns_{0};
+	uint64_t last_data_timestamp_ns_{0};
+	uint64_t last_ros_stamp_ns_{0};
+	int64_t time_resync_interval_ns_{0};
+	int64_t data_interval_ns_{0};
+	bool can_publish_{false};
+	ros::Time last_cb_time_;
+	int64_t cb_delta_epsilon_ns_{0};
+
 	tf2::Quaternion orientation_;
+	double angular_velocity_variance_;
 	tf2::Vector3 angular_velocity_;
+	double linear_acceleration_variance_;
 	tf2::Vector3 linear_acceleration_;
 
+	double magnetic_field_variance_;
 	tf2::Vector3 magnetic_field_;
 
 	bool initialized_{false};
