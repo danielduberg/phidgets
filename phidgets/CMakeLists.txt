@@ -19,6 +19,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(catkin REQUIRED COMPONENTS
+  angles
   dynamic_reconfigure
   imu_filter_madgwick
   message_generation
@@ -43,7 +44,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES phidgets_util phidgets_motor phidgets_motors phidgets_encoder phidgets_encoders phidgets_spatial phidgets_temperature
-  CATKIN_DEPENDS nodelet dynamic_reconfigure phidgets_msgs roscpp roslib sensor_msgs std_msgs std_srvs
+  CATKIN_DEPENDS angles nodelet dynamic_reconfigure phidgets_msgs roscpp roslib sensor_msgs std_msgs std_srvs
 )
 
 include_directories(

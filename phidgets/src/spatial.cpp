@@ -4,6 +4,7 @@
 #include <phidgets/util.h>
 
 // ROS
+#include <angles/angles.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/MagneticField.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -375,7 +376,9 @@ void Spatial::spatialCallback(PhidgetSpatialHandle ch, void *ctx, double const a
 	if (s->can_publish_) {
 		constexpr double g = 9.80665;
 
-		s->angular_velocity_ = tf2::Vector3(ar[0], ar[1], ar[2]) * (M_PI / 180.0);
+		s->angular_velocity_ =
+		    tf2::Vector3(angles::from_degrees(ar[0]), angles::from_degrees(ar[1]),
+		                 angles::from_degrees(ar[2]));
 		s->linear_acceleration_ = tf2::Vector3(acc[0], acc[1], acc[2]) * -g;
 		if (PUNK_DBL != mag[0]) {
 			s->magnetic_field_ = tf2::Vector3(mag[0], mag[1], mag[2]) * 1e-4;
